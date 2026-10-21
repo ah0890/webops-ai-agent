@@ -10,7 +10,7 @@ from sqlmodel import Field, SQLModel
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)  # stored as naive UTC
+    return datetime.now(UTC)
 
 
 class ExtractionStatus(StrEnum):

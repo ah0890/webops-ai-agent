@@ -1,0 +1,34 @@
+# Integration-verification config ONLY — not supplier data.
+# books.toscrape.com is a public sandbox published specifically for scraping practice, so it is a
+# safe, authorized target for verifying the real browser pipeline end-to-end. Its prices are static,
+# so it exercises extraction/validation/storage/reporting, not real market movements.
+#
+#   WEBSITES_CONFIG=tests/integration/toscrape.websites.yaml WORKFLOWS_CONFIG=tests/integration/toscrape.workflows.yaml \
+#   DATABASE_URL=sqlite:///./data/verify.db python -m app.cli sync && python -m app.cli run "Sandbox verification"
+websites:
+  - name: Books to Scrape (sandbox)
+    base_url: "https://books.toscrape.com"
+    allowed_domains: ["books.toscrape.com"]
+    currency: GBP
+    request_delay_seconds: 2
+    selectors:                       # discovered with: python -m app.cli inspect <product-url>
+      price: ".product_main .price_color"
+      product_name: ".product_main h1"
+      availability: ".product_main .availability"
+      sku: "table.table-striped tr:first-child td"   # UPC row
+    products:
+      - name: A Light in the Attic
+        url: "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
+        sku: "a897fe39b1053632"
+        expected_name_contains: "Light in the Attic"
+      - name: Tipping the Velvet
+        url: "https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
+        sku: "90fa61229261140a"
+      - name: Soumission
+        url: "https://books.toscrape.com/catalogue/soumission_998/index.html"
+        sku: "6957f44c3847a760"
+      - name: Deliberately broken URL (failure-isolation check)
+        url: "https://books.toscrape.com/catalogue/this-page-does-not-exist_0/index.html"
+      - name: Sharp Objects
+        url: "https://books.toscrape.com/catalogue/sharp-objects_997/index.html"
+        sku: "e00eb4fd7b871a48"

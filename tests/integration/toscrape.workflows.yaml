@@ -1,0 +1,7 @@
+workflows:
+  - name: Sandbox verification
+    description: End-to-end verification of the real browser pipeline against the public scraping sandbox.
+    definition:
+      websites: ["Books to Scrape (sandbox)"]
+      price_change_threshold: 5
+      schedule: { kind: manual }
