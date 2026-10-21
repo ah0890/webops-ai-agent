@@ -148,7 +148,8 @@ class PriceMonitorRunner:
                 for p in products:
                     self._store_failure(run_id, audit, website, p, "config_error", f"invalid website config: {e}", None)
                 return
-            ctx = await bm.new_context(website.name, rt.guard, use_saved_session=bool(rt.login and rt.login.reuse_session))
+            # A saved session exists only if the user created one (login config or `cli login-session`).
+            ctx = await bm.new_context(website.name, rt.guard, use_saved_session=not (rt.login and not rt.login.reuse_session))
             ex = BrowserExecutor(ctx, rt.guard, self.settings.screenshots_dir, f"run_{run_id}/{slug(website.name)}",
                                  self.settings.downloads_dir / f"run_{run_id}")
             try:

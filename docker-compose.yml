@@ -1,0 +1,16 @@
+services:
+  webops:
+    build: .
+    image: webops-ai-agent:latest
+    ports:
+      - "127.0.0.1:8000:8000"   # bind to localhost; put a reverse proxy + API_KEY in front for remote access
+    env_file: .env
+    environment:
+      BROWSER_HEADLESS: "true"
+    volumes:
+      - ./config:/app/config:ro     # your real websites.yaml / workflows.yaml
+      - ./data:/app/data            # SQLite database + saved sessions
+      - ./screenshots:/app/screenshots
+      - ./reports:/app/reports
+    shm_size: "1gb"                 # Chromium needs more than Docker's 64MB default /dev/shm
+    restart: unless-stopped

@@ -35,7 +35,7 @@ def cmd_sync(args) -> int:
     print(json.dumps({"websites_file": str(settings.websites_config), "workflows_file": str(settings.workflows_config),
                       **w, **f}, indent=2))
     if not settings.websites_config.exists():
-        print("\nNo config/websites.yaml yet — copy config/websites.example.yaml and add your real websites.")
+        print("\nNo config/websites.yaml yet - copy config/websites.example.yaml and add your real websites.")
     return 0
 
 
@@ -103,7 +103,7 @@ def cmd_run(args) -> int:
         settings.browser_headless = False
     svc = RunService(settings)
     run = svc.create_run(_resolve_workflow(args.workflow), "cli")
-    print(f"Run #{run.id} started…")
+    print(f"Run #{run.id} started...")
     run = svc.execute(run.id)  # type: ignore[arg-type]
     print(json.dumps({"run_id": run.id, "status": run.status, "total": run.products_total,
                       "succeeded": run.products_succeeded, "needs_review": run.products_needs_review,
@@ -143,6 +143,37 @@ def cmd_inspect(args) -> int:
     return 0
 
 
+def cmd_login_session(args) -> int:
+    """Open a visible browser on an authorized site so the user can log in manually (incl. 2FA)."""
+    from app.browser.manager import BrowserManager
+    from app.database.models import Website
+    from app.database.session import session_scope
+    from app.security.url_guard import UrlGuard
+
+    settings = _bootstrap()
+    settings.browser_headless = False
+    with session_scope() as s:
+        site = s.exec(select(Website).where(Website.name == args.website)).first()
+        if not site:
+            raise SystemExit(f"website {args.website!r} not found - sync your config first")
+        start_url = args.url or (site.config.get("login") or {}).get("url") or site.base_url
+        guard = UrlGuard(site.allowed_domains)
+        guard.check(start_url)
+
+    async def go() -> None:
+        async with BrowserManager(settings) as bm:
+            ctx = await bm.new_context(site.name, guard, use_saved_session=True)
+            page = await ctx.new_page()
+            await page.goto(start_url)
+            await asyncio.to_thread(input, f"Log in to {site.name} in the browser window, then press Enter here... ")
+            await bm.save_session(ctx, site.name)
+            print(f"Session saved to {bm.session_path(site.name)} (git-ignored). Future runs reuse it.")
+            await ctx.close()
+
+    asyncio.run(go())
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -177,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("url")
     sp.add_argument("--headed", action="store_true")
     sp.set_defaults(fn=cmd_inspect)
+    sp = sub.add_parser("login-session", help="Log in manually to an authorized site and save the session")
+    sp.add_argument("website", help="website name as configured")
+    sp.add_argument("--url", help="start URL (defaults to the login URL or base_url)")
+    sp.set_defaults(fn=cmd_login_session)
     sp = sub.add_parser("serve", help="Start API + dashboard + scheduler")
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)

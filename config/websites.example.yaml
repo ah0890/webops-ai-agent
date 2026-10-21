@@ -1,0 +1,65 @@
+# ============================================================================================
+#  WebOps AI Agent — websites & products you are AUTHORIZED to monitor
+# ============================================================================================
+#  1. Copy this file to config/websites.yaml   (git-ignored: your supplier data stays local)
+#  2. Replace every <ANGLE-BRACKET> value with your real data. Nothing below is real data.
+#  3. Before writing selectors, inspect a real product page:
+#         python -m app.cli inspect "<A REAL PRODUCT URL>"
+#     It reports JSON-LD/microdata/meta price data and suggests CSS selectors.
+#  4. Load it:  python -m app.cli sync      (or "Sync configuration" in the dashboard)
+#
+#  Many shops expose schema.org Product data — then `selectors` are optional. Configuring a
+#  price selector as well lets observations reach VERIFIED (two sources corroborate).
+#  For large catalogues, import a CSV instead (see config/products.example.csv) and add a
+#  website block here only for the extra settings (selectors, login, delays).
+# ============================================================================================
+
+websites:
+  - name: "<SUPPLIER NAME>"                 # unique; also the "supplier" column in CSV imports
+    base_url: "https://<supplier-domain>"
+    allowed_domains:                        # the browser can ONLY navigate within these domains
+      - "<supplier-domain>"
+    currency: "<ISO CODE e.g. USD>"         # expected currency; mismatches are flagged NEEDS_REVIEW
+    request_delay_seconds: 5                # pause between product pages on this site
+    # respect_robots_txt: true              # default from RESPECT_ROBOTS_TXT
+
+    # Optional — CSS selectors found with `inspect`. Append @attr to read an attribute.
+    selectors:
+      price: "<CSS SELECTOR, e.g. .product-price .amount>"
+      product_name: "<CSS SELECTOR, e.g. h1.product-title>"
+      availability: "<CSS SELECTOR, e.g. .stock-status>"
+      # sku: "<CSS SELECTOR>"
+      # currency: "meta[itemprop=priceCurrency]@content"
+
+    # Optional — wording this site uses for stock status (case-insensitive substrings).
+    # availability_rules:
+    #   in_stock: ["in stock", "available"]
+    #   out_of_stock: ["out of stock", "sold out"]
+    #   preorder: ["pre-order"]
+
+    # Optional — run before extraction, e.g. close a cookie banner. Mark optional: true so a
+    # missing banner is not an error.
+    # pre_extract_actions:
+    #   - { action: click, selector: "<COOKIE ACCEPT BUTTON SELECTOR>", optional: true }
+
+    # Optional — ONLY for portals you are authorized to use. Credentials come from environment
+    # variables (.env), never from this file. CAPTCHAs/2FA are never bypassed: if the portal shows
+    # one, the run reports "login required"; log in yourself once with:
+    #     python -m app.cli login-session "<SUPPLIER NAME>"
+    # login:
+    #   url: "https://<supplier-domain>/login"
+    #   steps:
+    #     - { action: fill, selector: "#email", value: "${SUPPLIER_A_USERNAME}" }
+    #     - { action: fill, selector: "#password", value: "${SUPPLIER_A_PASSWORD}", secret: true }
+    #     - { action: click, selector: "button[type=submit]" }
+    #   success_selector: "<ELEMENT ONLY VISIBLE WHEN LOGGED IN>"
+    #   reuse_session: true
+
+    products:
+      - name: "<PRODUCT NAME AS YOU CALL IT>"
+        url: "https://<supplier-domain>/<product-path>"
+        sku: "<SKU / ITEM CODE>"            # optional; compared with the SKU on the page when shown
+        # price_change_threshold: 5         # optional per-product override (%)
+        # expected_name_contains: "<TEXT>"  # optional guard against redirects to a different product
+        # active: true
+        # selectors: { price: "<OVERRIDE FOR THIS PRODUCT>" }

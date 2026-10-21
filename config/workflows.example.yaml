@@ -1,0 +1,24 @@
+# Copy to config/workflows.yaml (git-ignored), adjust, then `python -m app.cli sync`.
+# Workflows can also be created from a plain-language instruction in the dashboard or with:
+#   python -m app.cli plan "Monitor my suppliers every morning and alert me on 5% price changes" --save
+
+workflows:
+  - name: "Daily supplier price check"
+    description: "Collect prices and availability from all configured suppliers and alert on changes."
+    enabled: true
+    definition:
+      websites: ["*"]                 # all configured websites, or a list of website names
+      # skus: ["<SKU>", "<SKU>"]      # optional: restrict to specific SKUs
+      price_change_threshold: 5       # % — product-level thresholds take precedence
+      detect_increases: true
+      detect_decreases: true
+      detect_availability: true
+      generate_excel: true
+      schedule:                       # kind: manual | interval | daily | weekly (host local time)
+        kind: daily
+        at: "08:00"
+        # kind: interval
+        # every_hours: 6
+        # kind: weekly
+        # weekday: mon
+        # at: "08:00"
