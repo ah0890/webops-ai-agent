@@ -26,3 +26,4 @@ reports/*
 Thumbs.db
 .vscode/
 .idea/
+config/selector_overrides.yaml

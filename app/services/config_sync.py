@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlmodel import Session, select
 
 from app.config.schema import WebsiteConfig, WebsitesFile, WorkflowsFile
@@ -50,17 +52,28 @@ def upsert_product(session: Session, website: Website, *, name: str, url: str, s
     return row, created
 
 
-def sync_websites(session: Session, cfg: WebsitesFile) -> dict:
+def sync_websites(session: Session, cfg: WebsitesFile, overrides_file: Path | None = None) -> dict:
+    from app.config.settings import get_settings
+    from app.services.selector_repair import apply_overrides
+
+    overrides_file = overrides_file or get_settings().selector_overrides_file
     s = {"websites_created": 0, "websites_updated": 0, "products_created": 0, "products_updated": 0}
     for w in cfg.websites:
         site, created = upsert_website(session, w)
         s["websites_created" if created else "websites_updated"] += 1
+        site_sel, prod_sel = apply_overrides(
+            w.name, site.config.get("selectors") or {},
+            {p.url: p.selectors.model_dump(exclude_none=True) if p.selectors else {} for p in w.products},
+            overrides_file)
+        if site_sel:
+            site.config = {**site.config, "selectors": site_sel}
+            session.add(site)
         for p in w.products:
             _, pc = upsert_product(
                 session, site, name=p.name, url=p.url, sku=p.sku, currency=p.currency or w.currency,
                 threshold=p.price_change_threshold, active=p.active,
                 expected_name_contains=p.expected_name_contains,
-                selectors=p.selectors.model_dump(exclude_none=True) if p.selectors else {},
+                selectors=prod_sel.get(p.url, {}),
             )
             s["products_created" if pc else "products_updated"] += 1
     session.commit()

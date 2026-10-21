@@ -184,6 +184,30 @@ class Screenshot(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class SelectorSuggestion(SQLModel, table=True):
+    """A proposed replacement for a configured selector that stopped working. Applied only on approval."""
+
+    __tablename__ = "selector_suggestions"
+    id: int | None = Field(default=None, primary_key=True)
+    website_id: int = Field(foreign_key="websites.id", index=True)
+    product_id: int | None = Field(default=None, foreign_key="products.id")
+    run_id: int | None = Field(default=None, foreign_key="workflow_runs.id")
+    field: str  # price | product_name
+    scope: str = "website"  # website | product (where the broken selector is configured)
+    old_selector: str | None = None
+    proposed_selector: str
+    alternatives: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    sample_text: str | None = None
+    anchor_value: str | None = None
+    anchor_source: str | None = None  # json_ld | microdata | meta | structured | previous_observation
+    confidence: float = 0.0
+    occurrences: int = 1
+    status: str = "pending"  # pending | approved | rejected | superseded
+    created_at: datetime = Field(default_factory=utcnow)
+    last_seen_at: datetime = Field(default_factory=utcnow)
+    decided_at: datetime | None = None
+
+
 class Report(SQLModel, table=True):
     __tablename__ = "reports"
     id: int | None = Field(default=None, primary_key=True)

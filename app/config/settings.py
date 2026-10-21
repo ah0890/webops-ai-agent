@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # Real-data configuration files
     websites_config: Path = PROJECT_ROOT / "config" / "websites.yaml"
     workflows_config: Path = PROJECT_ROOT / "config" / "workflows.yaml"
+    selector_overrides_file: Path = PROJECT_ROOT / "config" / "selector_overrides.yaml"
+    selector_healing: bool = True
 
     # Price intelligence
     price_change_threshold: float = Field(5.0, gt=0, le=100)

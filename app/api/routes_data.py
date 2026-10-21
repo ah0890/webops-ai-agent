@@ -21,12 +21,14 @@ from app.database.models import (
     Observation,
     Product,
     Screenshot,
+    SelectorSuggestion,
     Website,
     Workflow,
     WorkflowRun,
     utcnow,
 )
 from app.database.session import get_session
+from app.services import selector_repair
 from app.services.config_sync import sync_websites, sync_workflows
 from app.services.importer import import_products
 from app.services.intelligence import PricePoint, compute_stats
@@ -130,6 +132,8 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "failed_checks": status_counts.get(ExtractionStatus.FAILED.value, 0),
         "price_changes_30d": changes_30d, "price_increases_30d": increases_30d, "price_decreases_30d": decreases_30d,
         "alerts_open": alert_counts.get("open", 0), "alerts_total": sum(alert_counts.values()),
+        "selector_repairs_pending": len(session.exec(select(SelectorSuggestion.id)
+                                                     .where(SelectorSuggestion.status == "pending")).all()),
         "workflows": len(session.exec(select(Workflow.id)).all()),
         "last_execution": row(last, workflow_name=last_wf.name if last_wf else None) if last else None,
         "recent_runs": [{"id": r.id, "status": r.status, "started_at": iso(r.started_at),
@@ -224,3 +228,43 @@ def system() -> dict:
         "default_threshold": s.price_change_threshold, "api_key_required": s.api_key is not None,
         "respect_robots_txt": s.respect_robots_txt, "max_concurrency": s.max_concurrency,
     }
+
+
+class SuggestionDecision(BaseModel):
+    selector: str | None = None  # approve an alternative instead of the top proposal
+
+
+@router.get("/selector-suggestions")
+def selector_suggestions(status: str | None = "pending", session: Session = Depends(get_session)) -> list[dict]:
+    q = select(SelectorSuggestion)
+    if status:
+        q = q.where(SelectorSuggestion.status == status)
+    items = session.exec(q.order_by(col(SelectorSuggestion.id).desc()).limit(500)).all()
+    sites = {w.id: w.name for w in session.exec(select(Website)).all()}
+    products_ = {p.id: p for p in session.exec(select(Product)).all()}
+    return [row(x, website=sites.get(x.website_id),
+                product=products_[x.product_id].name if x.product_id in products_ else None,
+                product_url=products_[x.product_id].url if x.product_id in products_ else None) for x in items]
+
+
+@router.post("/selector-suggestions/{suggestion_id}/approve", dependencies=[Depends(require_api_key)])
+def approve_suggestion(suggestion_id: int, body: SuggestionDecision | None = None,
+                       session: Session = Depends(get_session)) -> dict:
+    try:
+        s = selector_repair.approve(session, suggestion_id, get_settings().selector_overrides_file,
+                                    body.selector if body else None)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    return row(s)
+
+
+@router.post("/selector-suggestions/{suggestion_id}/reject", dependencies=[Depends(require_api_key)])
+def reject_suggestion(suggestion_id: int, session: Session = Depends(get_session)) -> dict:
+    try:
+        return row(selector_repair.reject(session, suggestion_id))
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e

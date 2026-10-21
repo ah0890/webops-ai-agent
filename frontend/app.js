@@ -135,6 +135,11 @@ async function loadOverview() {
         h("li", {}, "Inspect a product page first: python -m app.cli inspect <product-url>"),
         h("li", {}, "Create a workflow from a plain-language instruction in Workflows, then press Run now.")));
     ob.classList.remove("hidden");
+  } else if (o.selector_repairs_pending) {
+    put(clear(ob), h("strong", {}, `${o.selector_repairs_pending} selector repair(s) awaiting approval. `),
+      "A monitored website changed its page structure. ",
+      h("button", { class: "link", onclick: () => show("errors") }, "Review repairs"));
+    ob.classList.remove("hidden");
   } else ob.classList.add("hidden");
 
   // Recent runs: stacked bars by data quality (status palette; legend + table-equivalent in Execution Monitor).
@@ -165,6 +170,7 @@ async function loadOverview() {
       h("div", { style: "margin-top:4px" }, a.reason)));
   }
   updateAlertPill(o.alerts_open);
+  updateRepairPill(o.selector_repairs_pending);
 }
 function updateAlertPill(n) { const p = $("nav-alerts"); p.textContent = n; p.classList.toggle("hidden", !n); }
 
@@ -311,7 +317,8 @@ async function loadRun(id) {
       const o = p.observation;
       grid.append(h("div", {}, o ? badge(QUALITY, o.extraction_status) : h("span", { class: "muted" }, "…"),
         o && o.price != null ? h("div", { class: "small" }, fmtMoney(o.price, o.currency)) : null));
-      const msgs = h("ul", {}, STAGES.filter(([k]) => p.messages[k]).map(([k, l]) => h("li", {}, h("strong", {}, `${l}: `), p.messages[k])));
+      const extra = [["recovery", "Recovery"], ["selector_repair", "Selector repair"]];
+      const msgs = h("ul", {}, [...STAGES, ...extra].filter(([k]) => p.messages[k]).map(([k, l]) => h("li", {}, h("strong", {}, `${l}: `), p.messages[k])));
       const issues = (o?.issues || []).length ? h("ul", {}, o.issues.map(i => h("li", {}, `${i.severity.toUpperCase()} ${i.code}: ${i.message}`))) : null;
       const thumbs = h("div", { class: "thumbs" }, p.screenshots.map(s => h("div", { class: "thumb", onclick: () => lightbox(s.id, `${p.product} — ${s.kind}`) },
         h("img", { src: `/api/screenshots/${s.id}`, loading: "lazy", alt: s.kind }), h("div", {}, s.kind.replace(/_/g, " ")))));
@@ -357,8 +364,39 @@ async function loadAlerts() {
   ], rows);
 }
 
-// ---------- errors ----------
+// ---------- errors & selector repairs ----------
+const ANCHOR = {
+  json_ld: "the page's JSON-LD product data", microdata: "the page's microdata", meta: "the page's meta tags",
+  structured: "the page's structured data", previous_observation: "the last trusted price (weaker evidence: verify it)",
+};
+async function loadRepairs() {
+  const items = await api("/api/selector-suggestions?status=pending");
+  updateRepairPill(items.length);
+  const box = clear($("repairs"));
+  if (!items.length) { box.append(h("div", { class: "empty" }, "No pending repairs — all configured selectors are working.")); return; }
+  for (const s of items) {
+    const choices = [s.proposed_selector, ...(s.alternatives || [])];
+    const pick = h("select", { "aria-label": "Selector to apply" }, choices.map(c => h("option", { value: c }, c)));
+    const decide = (action) => async () => {
+      try {
+        await api(`/api/selector-suggestions/${s.id}/${action}`, action === "approve" ? { method: "POST", json: { selector: pick.value } } : { method: "POST" });
+        toast(action === "approve" ? "Repair applied — next run uses the new selector." : "Suggestion rejected."); loadRepairs();
+      } catch (e) { toast(`Failed: ${e.message}`); }
+    };
+    box.append(h("div", { class: "repair" },
+      h("div", {},
+        h("div", {}, h("strong", {}, s.website), s.scope === "product" ? ` · ${s.product}` : " · all products", ` · ${s.field.replace("_", " ")}`),
+        h("div", { style: "margin:6px 0" }, h("span", { class: "sel old" }, s.old_selector || "(none)"), "  →  ", pick),
+        h("div", { class: "small muted" }, `Matched “${s.sample_text}” on ${s.product || "the page"}, which equals ${s.anchor_value} from ${ANCHOR[s.anchor_source] || s.anchor_source}.`),
+        h("div", { class: "small muted" }, `Confidence ${Math.round(s.confidence * 100)}% · seen ${s.occurrences}× · last ${fmtAgo(s.last_seen_at)}`)),
+      h("div", { class: "actions" }, h("button", { class: "primary sm", onclick: decide("approve") }, "Approve"),
+        h("button", { class: "sm", onclick: decide("reject") }, "Reject"))));
+  }
+}
+function updateRepairPill(n) { const p = $("nav-repairs"); p.textContent = n; p.classList.toggle("hidden", !n); }
+
 async function loadErrors() {
+  loadRepairs();
   const rows = await api("/api/errors");
   $("errors-empty").classList.toggle("hidden", rows.length > 0);
   table($("errors-table"), [

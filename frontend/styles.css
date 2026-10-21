@@ -62,6 +62,7 @@ nav button { text-align: left; background: none; border: 0; padding: 9px 10px; b
 nav button:hover { background: var(--surface-2); color: var(--text-primary); }
 nav button.active { background: var(--surface-2); color: var(--text-primary); font-weight: 600; }
 .sidebar-foot { margin-top: auto; font-size: 11px; color: var(--text-muted); padding: 0 6px; line-height: 1.7; }
+.pill.warn { background: #b07800; }
 .pill { background: var(--critical); color: #fff; border-radius: 10px; font-size: 11px; padding: 0 7px; font-weight: 600; }
 
 main { padding: 26px 28px 60px; min-width: 0; }
@@ -168,3 +169,11 @@ input[type=password] { width: 280px; }
   .pipeline { grid-template-columns: minmax(140px, 1fr) repeat(7, 44px) 90px; overflow-x: auto; }
   input[type=password] { width: 100%; }
 }
+
+.repair { display: grid; grid-template-columns: 1fr auto; gap: 10px 18px; padding: 14px 0; border-bottom: 1px solid var(--grid); align-items: start; }
+.repair:last-child { border-bottom: 0; }
+.repair .sel { font: 12.5px ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+.repair .old { text-decoration: line-through; color: var(--text-muted); }
+.repair select { font: 12.5px ui-monospace, SFMono-Regular, Consolas, monospace; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); max-width: 100%; }
+.repair .actions { display: flex; gap: 6px; }
+@media (max-width: 720px) { .repair { grid-template-columns: 1fr; } }

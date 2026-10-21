@@ -20,7 +20,7 @@
       <button data-view="prices">Price Intelligence</button>
       <button data-view="runs">Execution Monitor</button>
       <button data-view="alerts">Alerts <span id="nav-alerts" class="pill hidden"></span></button>
-      <button data-view="errors">Errors</button>
+      <button data-view="errors">Errors <span id="nav-repairs" class="pill warn hidden" title="selector repairs awaiting approval"></span></button>
       <button data-view="workflows">Workflows</button>
       <button data-view="import">Data Onboarding</button>
     </nav>
@@ -84,7 +84,12 @@
     <!-- ERRORS -->
     <section id="view-errors" class="view hidden">
       <header class="view-head"><h1>Errors &amp; review queue</h1><p class="muted">Observations that are FAILED or NEEDS_REVIEW. They are stored for audit but never used for price comparisons.</p></header>
-      <div class="card"><div class="table-wrap"><table id="errors-table"></table></div><div id="errors-empty" class="empty hidden">No failed or review-flagged checks.</div></div>
+      <div class="card" id="repairs-card">
+        <div class="card-head"><h2>Selector repair suggestions</h2>
+          <span class="muted small">Proposed when a configured selector stops working · verified on the live page · applied only when you approve</span></div>
+        <div id="repairs"></div>
+      </div>
+      <div class="card"><h2>Failed &amp; review-flagged checks</h2><div class="table-wrap"><table id="errors-table"></table></div><div id="errors-empty" class="empty hidden">No failed or review-flagged checks.</div></div>
     </section>
 
     <!-- WORKFLOWS -->

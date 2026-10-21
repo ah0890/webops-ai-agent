@@ -76,6 +76,7 @@ class PriceMonitorRunner:
         self.robots = robots or RobotsPolicy(user_agent=settings.user_agent_suffix or "*")
         self.observer = PageObserver()
         self.extractor = DataExtractor(provider, settings.llm_extraction_fallback)
+        self._new_repairs: dict[int, list[str]] = defaultdict(list)
         self.policy = ValidationPolicy(supported_currencies=settings.currency_set,
                                        max_plausible_change_pct=settings.max_plausible_change_pct)
 
@@ -297,6 +298,8 @@ class PriceMonitorRunner:
             break
 
         assert outcome is not None
+        if self.settings.selector_healing and extraction is not None and selectors and                 not (state and (state.blocked or state.not_found)):
+            await self._heal_selectors(run_id, audit, ex, rt, product, extraction, selectors, previous, expected_ccy)
         final_shot = None
         if outcome.status != ExtractionStatus.FAILED.value:
             final_shot = await self._safe_shot(ex, f"p{pid}_after_extraction")
@@ -307,6 +310,28 @@ class PriceMonitorRunner:
         obs = self._store(run_id, rt.website, product, extraction, outcome, final_shot or shot_before)
         step("store", status="ok", message=f"observation #{obs.id} stored as {obs.extraction_status}")
         self._compare_and_alert(run_id, audit, rt.website, product, outcome, previous, defn, obs)
+
+    async def _heal_selectors(self, run_id, audit, ex, rt, product, extraction, selectors, previous, expected_ccy) -> None:
+        """Propose (never apply) replacements for configured selectors that no longer work."""
+        from app.browser.selector_healer import propose
+        from app.services.selector_repair import record
+
+        try:
+            page = await ex.ensure_page()
+            proposals = await propose(page, extraction, selectors, previous.price if previous else None, expected_ccy)
+        except Exception as e:
+            log.info("selector healing skipped: %s", e)
+            return
+        for prop in proposals:
+            with session_scope() as s:
+                sug, is_new = record(s, website=rt.website, product=product, run_id=run_id, proposal=prop)
+            if is_new:
+                self._new_repairs[rt.website.id].append(f"{prop.field}: {prop.old_selector!r} -> {prop.selector!r}")
+            audit.step("selector_repair", website_id=rt.website.id, product_id=product.id, status="warning",
+                       message=f"configured {prop.field} selector {prop.old_selector!r} looks broken; proposed "
+                               f"{prop.selector!r} (confidence {prop.confidence:.2f}, anchor {prop.anchor_source}="
+                               f"{prop.anchor_value}) - pending approval #{sug.id}",
+                       detail={"suggestion_id": sug.id, "alternatives": prop.alternatives, "sample": prop.sample_text})
 
     async def _recover(self, ex, audit, rt, product, attempt, strategies, state, outcome) -> None:
         idx = attempt - 2
@@ -434,6 +459,13 @@ class PriceMonitorRunner:
                               reason=f"All {len(items)} product check(s) on {site.name if site else wid} failed")
                     s.add(a)
                     alerts.append(a)
+            for wid, repairs in self._new_repairs.items():
+                site = s.get(Website, wid)
+                a = Alert(run_id=run_id, website_id=wid, alert_type="selector_broken", severity="medium",
+                          reason=f"Page structure changed on {site.name if site else wid}: {len(repairs)} selector "
+                                 f"repair(s) proposed and awaiting approval ({'; '.join(repairs[:3])})")
+                s.add(a)
+                alerts.append(a)
             run.products_succeeded = by_status[ExtractionStatus.VERIFIED.value] + by_status[ExtractionStatus.LIKELY_VALID.value]  # type: ignore[union-attr]
             run.products_needs_review = by_status[ExtractionStatus.NEEDS_REVIEW.value]  # type: ignore[union-attr]
             run.products_failed = by_status[ExtractionStatus.FAILED.value]  # type: ignore[union-attr]

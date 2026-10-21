@@ -84,6 +84,8 @@ def run_products(run_id: int, session: Session = Depends(get_session)) -> list[d
             if not (s.stage == "alert" and prev == "ok"):
                 entry["stages"][s.stage] = s.status
                 entry["messages"][s.stage] = s.message
+        elif s.stage in ("selector_repair", "recovery"):
+            entry["messages"][s.stage] = s.message
         entry["attempts"] = max(entry["attempts"], s.attempt)
     for sh in shots:
         if sh.product_id in out:

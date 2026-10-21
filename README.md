@@ -23,7 +23,7 @@ append-only price history, detects changes, raises alerts and produces an Excel 
 [Features](#features) · [Tech stack](#technology-stack) · [Installation](#installation) ·
 [Configuration](#configuration) · [Adding websites](#adding-real-websites) · [Adding products](#adding-real-products) ·
 [Running](#running-the-agent) · [Scheduling](#scheduling) · [Reports](#reports) · [Security](#security) ·
-[Data quality](#data-quality) · [Error handling](#error-handling) · [Screenshots](#screenshots) · [API](#api) ·
+[Data quality](#data-quality) · [Selector self-healing](#selector-self-healing) · [Error handling](#error-handling) · [Screenshots](#screenshots) · [API](#api) ·
 [Testing](#testing) · [Limitations](#limitations) · [Roadmap](#roadmap)
 
 ## Business problem
@@ -102,6 +102,7 @@ flowchart LR
 - CSV / Excel / YAML / JSON product import with row-level validation summary
 - Local scheduler (interval / daily / weekly) that survives restarts
 - Site inspector to discover selectors on a real page before configuring it
+- **Selector self-healing**: when a site redesign breaks a configured selector, the agent proposes a replacement verified on the live page, for one-click approval
 
 ## Technology stack
 
@@ -247,6 +248,25 @@ Generated automatically after each run (`reports/`) and downloadable from the da
 
 Every issue is stored with the observation, so a reviewer sees exactly why.
 
+## Selector self-healing
+Real websites get redesigned, and a broken selector is the most common way scrapers silently degrade.
+During every run the agent checks each configured selector against an independent **anchor**: the page's
+own structured data (strong evidence) or, if there is none, the product's last trusted price (weaker
+evidence, labelled as such). When a selector is missing or disagrees with the anchor, the agent scans the
+live DOM for the element showing the anchor value, builds candidate selectors (preferring `id`,
+`itemprop` and `data-*` test attributes, then semantic classes, never layout classes like `col-md-6` or
+crossed-out "was" prices), keeps only those that really select that element, and ranks them.
+
+The proposal appears under **Errors → Selector repair suggestions** (with alternatives, evidence and
+confidence) and raises a `selector_broken` alert. **Nothing changes until you approve.** Approved repairs
+are stored in `config/selector_overrides.yaml` (git-ignored) rather than rewriting your commented
+`websites.yaml`; an override applies only while `websites.yaml` still contains the selector it replaced,
+so a later hand edit always wins. Set `SELECTOR_HEALING=false` to disable.
+
+Verified on a real site: a simulated redesign broke the price selector → all products failed and the
+agent proposed `div.product_main p.price_color` from the live page → approved in the dashboard →
+re-synced with the still-broken YAML → the next run was back to VERIFIED.
+
 ## Error handling
 
 Real websites change, so the runner is built for failure. When a product fails it:
@@ -296,6 +316,8 @@ Interactive OpenAPI documentation is served at **`/docs`** (Swagger) and **`/red
 | PATCH | `/api/alerts/{id}` | Acknowledge / resolve |
 | GET | `/api/screenshots/{id}` | Screenshot image |
 | POST | `/api/import/products` · `/api/config/sync` | Onboarding |
+| GET | `/api/selector-suggestions?status=pending` | Selector repair proposals |
+| POST | `/api/selector-suggestions/{id}/approve` · `/reject` | Approve (optionally an alternative selector) or reject |
 
 ## Testing
 
@@ -323,7 +345,7 @@ belong in `tests/integration/` and stay opt-in so the suite never depends on ext
 
 ## Roadmap
 
-1. Change-aware selector self-healing: when a configured selector disappears, propose a new one from the structured-data match and the inspector, for one-click approval.
+1. ~~Selector self-healing~~ (shipped) → next: name/availability anchors from the LLM with evidence checks.
 2. PostgreSQL + task queue (Celery/RQ) for multi-worker scale; per-domain rate limiter service.
 3. Notification channels (email, Slack, Teams) with digest rules.
 4. Variant-aware products (option selection actions) and shipping/tax capture.
