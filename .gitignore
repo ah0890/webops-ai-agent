@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets & local config (your real supplier data stays on your machine)
+.env
+config/websites.yaml
+config/workflows.yaml
+
+# Runtime data
+data/*
+!data/.gitkeep
+screenshots/*
+!screenshots/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
