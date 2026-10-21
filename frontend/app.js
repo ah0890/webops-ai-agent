@@ -478,7 +478,7 @@ $("imp-go").addEventListener("click", async () => {
     if ((s.warnings || []).length) {
       const wt = h("table");
       table(wt, [{ label: "Row", key: "row" }, { label: "Note", key: "warning" }], s.warnings);
-      out.append(h("p", { class: "small warn-list" }, `${s.warnings.length} row(s) imported with a note:`), h("div", { class: "table-wrap" }, wt));
+      out.append(h("p", { class: "small warn-list" }, `${s.warnings.length} row(s) ${dry ? "would be imported" : "imported"} with a note:`), h("div", { class: "table-wrap" }, wt));
     }
     if (s.errors.length) {
       const t = h("table");
