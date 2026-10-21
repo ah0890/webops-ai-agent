@@ -182,7 +182,9 @@ Configuration changes never require code changes. Load them with `python -m app.
 
 - In YAML, under each website's `products:` (`name`, `url`, optional `sku`, `price_change_threshold`, `expected_name_contains`).
 - Or import a list — columns: `supplier, product_name, sku, product_url, currency, price_change_threshold, active`
-  ([template](config/products.example.csv)):
+  ([template](config/products.example.csv)). Multi-sheet workbooks and exports with title rows work too: the importer
+  finds the sheet and header row automatically and accepts common names (`supplier_name`/`vendor`/`brand`,
+  `title`/`name`, `first_sku`/`variant_sku`, `url`/`link`), reporting which sheet and columns it used:
 
   ```bash
   python -m app.cli import products.csv --dry-run   # validate only

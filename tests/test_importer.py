@@ -64,3 +64,36 @@ def test_xlsx_and_json(session):
     assert import_products(session, "p.xlsx", buf.getvalue(), CCY).imported == 1
     data = {"products": [{"supplier": "Gamma", "name": "Plug", "url": "https://gamma.test/p"}]}
     assert import_products(session, "p.json", json.dumps(data).encode(), CCY).imported == 1
+
+
+def test_workbook_with_notes_sheet_title_rows_and_alias_headers(session):
+    """Real-world exports: a README sheet first, a title row above the header, different column names."""
+    wb = Workbook()
+    notes = wb.active
+    notes.title = "README"
+    notes.append(["Real Supplier Price Data"])
+    notes.append(["Captured from public catalogs"])
+    suppliers = wb.create_sheet("Suppliers")
+    suppliers.append(["supplier_name", "website"])
+    suppliers.append(["Alpha", "https://alpha.test"])
+    prods = wb.create_sheet("Products")
+    prods.append(["Export 2026-10-21"])
+    prods.append([])
+    prods.append(["supplier_id", "supplier_name", "title", "first_sku", "product_url", "currency"])
+    prods.append(["S1", "Alpha", "Bolt", "B-1", "https://alpha.test/products/bolt", "USD"])
+    prods.append(["S1", "Alpha", "Nut", "N-1", "https://alpha.test/products/nut", "Store default (verify)"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    s = import_products(session, "export.xlsx", buf.getvalue(), CCY)
+    assert s.source.startswith("sheet 'Products', header row 3")
+    assert (s.total_rows, s.imported, s.invalid) == (2, 2, 0)
+    assert s.warnings[0]["row"] == 5 and "not an ISO code" in s.warnings[0]["warning"]
+    nut = session.exec(select(Product).where(Product.sku == "N-1")).one()
+    assert nut.currency == "USD"  # falls back to the supplier currency from its other rows
+
+
+def test_unrecognised_columns_give_a_clear_error(session):
+    import pytest
+
+    with pytest.raises(ValueError, match="Found headers"):
+        import_products(session, "x.csv", b"foo,bar\n1,2\n", CCY)

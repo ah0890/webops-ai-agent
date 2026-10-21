@@ -467,12 +467,19 @@ $("imp-go").addEventListener("click", async () => {
   const fd = new FormData(); fd.append("file", f);
   const dry = $("imp-dry").checked;
   try {
-    const s = await api(`/api/import/products?dry_run=${dry}`, { method: "POST", body: fd });
+    $("imp-go").disabled = true;
+    const s = await api(`/api/import/products?dry_run=${dry}`, { method: "POST", body: fd }).finally(() => { $("imp-go").disabled = false; });
     const out = clear($("imp-out"));
     put(out, h("div", { class: "tiles compact", style: "margin-top:14px" },
       [["Rows", s.total_rows], ["Valid", s.valid], [dry ? "Would import" : "Imported", dry ? s.valid : s.imported], ["Updated", s.updated], ["Duplicates", s.duplicates], ["Invalid", s.invalid]]
         .map(([l, v]) => h("div", { class: "tile" }, h("div", { class: "label" }, l), h("div", { class: "value" }, v)))));
+    if (s.source) out.append(h("p", { class: "small muted" }, `Read from ${s.source}`));
     if (s.websites_created.length) out.append(h("p", { class: "small" }, `New websites: ${s.websites_created.join(", ")} (allowlist = product URL domain)`));
+    if ((s.warnings || []).length) {
+      const wt = h("table");
+      table(wt, [{ label: "Row", key: "row" }, { label: "Note", key: "warning" }], s.warnings);
+      out.append(h("p", { class: "small warn-list" }, `${s.warnings.length} row(s) imported with a note:`), h("div", { class: "table-wrap" }, wt));
+    }
     if (s.errors.length) {
       const t = h("table");
       table(t, [{ label: "Row", key: "row" }, { label: "URL", render: r => h("span", { class: "ellipsis" }, r.product_url || "—") }, { label: "Problem", render: r => r.errors.join("; ") }], s.errors);
