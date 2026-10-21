@@ -146,12 +146,13 @@ class ScheduleSpec(BaseModel):
         return self
 
     def describe(self) -> str:
-        return {
-            "manual": "Manual (Run Now)",
-            "interval": f"Every {self.every_hours:g} hours",
-            "daily": f"Daily at {self.at}",
-            "weekly": f"Weekly on {(self.weekday or '').title()} at {self.at}",
-        }[self.kind]
+        if self.kind == "interval":
+            return f"Every {self.every_hours:g} hours"
+        if self.kind == "daily":
+            return f"Daily at {self.at}"
+        if self.kind == "weekly":
+            return f"Weekly on {(self.weekday or '').title()} at {self.at}"
+        return "Manual (Run Now)"
 
 
 class WorkflowDefinition(BaseModel):

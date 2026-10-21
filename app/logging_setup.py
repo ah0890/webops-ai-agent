@@ -36,6 +36,6 @@ def configure_logging(level: str = "INFO", json_logs: bool = False) -> None:
     handler.addFilter(SecretMaskingFilter())
     root.addHandler(handler)
     root.setLevel(level)
-    for noisy in ("httpx", "httpcore", "anthropic", "asyncio"):
+    for noisy in ("httpx", "httpx2", "httpcore", "anthropic", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     root._webops_configured = True  # type: ignore[attr-defined]
