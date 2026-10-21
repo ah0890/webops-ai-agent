@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebOps AI Agent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">W</div>
+      <div><div class="brand-name">WebOps AI Agent</div><div class="brand-sub">Authorized browser operations</div></div>
+    </div>
+    <nav id="nav">
+      <button data-view="overview" class="active">Overview</button>
+      <button data-view="prices">Price Intelligence</button>
+      <button data-view="runs">Execution Monitor</button>
+      <button data-view="alerts">Alerts <span id="nav-alerts" class="pill hidden"></span></button>
+      <button data-view="errors">Errors</button>
+      <button data-view="workflows">Workflows</button>
+      <button data-view="import">Data Onboarding</button>
+    </nav>
+    <div class="sidebar-foot" id="system-info"></div>
+  </aside>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="view-overview" class="view">
+      <header class="view-head"><h1>Overview</h1><p class="muted">Every number on this page is read from the observation database.</p></header>
+      <div id="onboarding" class="callout hidden"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h2>Recent runs</h2><span class="muted small">checks per run by data quality</span></div>
+          <div class="chart-box"><canvas id="runs-chart" aria-label="Checks per run by status"></canvas></div>
+          <div id="runs-chart-empty" class="empty hidden">No runs yet.</div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">View all</button></div>
+          <div id="overview-alerts"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICES -->
+    <section id="view-prices" class="view hidden">
+      <header class="view-head"><h1>Price Intelligence</h1><p class="muted">Computed from trusted observations only (VERIFIED / LIKELY_VALID).</p></header>
+      <div class="card"><div class="table-wrap"><table id="prices-table"></table></div><div id="prices-empty" class="empty hidden"></div></div>
+      <div class="card hidden" id="product-detail">
+        <div class="card-head"><h2 id="pd-title"></h2><button class="link" id="pd-close">Close</button></div>
+        <div class="muted small" id="pd-sub"></div>
+        <div class="tiles compact" id="pd-stats"></div>
+        <div class="chart-box tall"><canvas id="pd-chart" aria-label="Price history"></canvas></div>
+        <h3>All observations</h3>
+        <div class="table-wrap"><table id="pd-table"></table></div>
+      </div>
+    </section>
+
+    <!-- RUNS -->
+    <section id="view-runs" class="view hidden">
+      <header class="view-head"><h1>Execution Monitor</h1><p class="muted">What exactly did the automation do? Every step, screenshot and decision is audited.</p></header>
+      <div class="runs-layout">
+        <div class="card run-list"><h2>Runs</h2><div id="run-list"></div></div>
+        <div>
+          <div class="card" id="run-head"><div class="empty">Select a run.</div></div>
+          <div class="card"><div class="card-head"><h2>Pipeline per product</h2><span class="legend-icons small muted">✓ ok · ⚠ warning · ✗ failed · – skipped</span></div><div id="run-products"></div></div>
+          <div class="card"><h2>Execution log</h2><div id="run-logs" class="logs"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALERTS -->
+    <section id="view-alerts" class="view hidden">
+      <header class="view-head"><h1>Alerts</h1>
+        <div class="seg" id="alert-filter"><button data-s="open" class="active">Open</button><button data-s="acknowledged">Acknowledged</button><button data-s="resolved">Resolved</button><button data-s="">All</button></div>
+      </header>
+      <div class="card"><div class="table-wrap"><table id="alerts-table"></table></div><div id="alerts-empty" class="empty hidden">No alerts in this view.</div></div>
+    </section>
+
+    <!-- ERRORS -->
+    <section id="view-errors" class="view hidden">
+      <header class="view-head"><h1>Errors &amp; review queue</h1><p class="muted">Observations that are FAILED or NEEDS_REVIEW. They are stored for audit but never used for price comparisons.</p></header>
+      <div class="card"><div class="table-wrap"><table id="errors-table"></table></div><div id="errors-empty" class="empty hidden">No failed or review-flagged checks.</div></div>
+    </section>
+
+    <!-- WORKFLOWS -->
+    <section id="view-workflows" class="view hidden">
+      <header class="view-head"><h1>Workflows</h1><p class="muted">Describe what you need in plain language. AI plans <em>what</em> to do; deterministic code executes <em>how</em>.</p></header>
+      <div class="card">
+        <h2>New workflow from instruction</h2>
+        <textarea id="wf-instruction" rows="3" placeholder="e.g. Monitor these supplier websites every morning at 08:00 and alert me when prices change by more than 5%."></textarea>
+        <div class="row"><button id="wf-plan" class="primary">Plan workflow</button><span id="wf-plan-status" class="muted small"></span></div>
+        <div id="wf-plan-out" class="hidden"></div>
+      </div>
+      <div class="card"><h2>Workflows</h2><div class="table-wrap"><table id="wf-table"></table></div><div id="wf-empty" class="empty hidden">No workflows yet.</div></div>
+    </section>
+
+    <!-- IMPORT -->
+    <section id="view-import" class="view hidden">
+      <header class="view-head"><h1>Data Onboarding</h1><p class="muted">Bring your real websites and products. Every row is validated and accounted for.</p></header>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Import product list</h2>
+          <p class="small muted">CSV, Excel (.xlsx), YAML or JSON with columns:
+            <code>supplier, product_name, sku, product_url, currency, price_change_threshold, active</code></p>
+          <input type="file" id="imp-file" accept=".csv,.xlsx,.yaml,.yml,.json">
+          <label class="check"><input type="checkbox" id="imp-dry" checked> Dry run (validate only)</label>
+          <div class="row"><button id="imp-go" class="primary">Validate / Import</button><button id="imp-template" class="link">Download CSV template</button></div>
+          <div id="imp-out"></div>
+        </div>
+        <div class="card">
+          <h2>Configuration files</h2>
+          <p class="small">Selectors, logins (via environment variables), availability wording and polite delays live in
+            <code>config/websites.yaml</code>; schedules in <code>config/workflows.yaml</code>. After editing them, sync:</p>
+          <button id="cfg-sync">Sync configuration</button>
+          <pre id="cfg-out" class="small hidden"></pre>
+          <h3>Websites</h3>
+          <div class="table-wrap"><table id="sites-table"></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>API key</h2>
+        <p class="small muted">Only needed when the server sets <code>API_KEY</code>. Stored in this browser only.</p>
+        <div class="row"><input id="api-key" type="password" placeholder="X-API-Key"><button id="api-key-save">Save</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true"><img id="lightbox-img" alt="Execution screenshot"><div id="lightbox-cap"></div></div>
+<div id="toast" class="toast hidden"></div>
+</body>
+</html>
