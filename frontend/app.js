@@ -490,9 +490,15 @@ $("cfg-sync").addEventListener("click", async () => {
   catch (e) { toast(`Sync failed: ${e.message}`); }
 });
 $("api-key").value = storage("webops.apiKey") || "";
-$("api-key-save").addEventListener("click", () => { storage("webops.apiKey", $("api-key").value.trim()); toast("API key saved in this browser."); });
+$("api-key-save").addEventListener("click", () => {
+  const v = $("api-key").value.trim();
+  if (v.startsWith("sk-ant-")) { toast("That looks like an Anthropic key. Put it in .env as ANTHROPIC_API_KEY, not here."); return; }
+  storage("webops.apiKey", v); toast(v ? "API key saved in this browser." : "API key cleared.");
+});
 async function loadSites() {
   const rows = await api("/api/websites");
+  $("sites-empty").classList.toggle("hidden", rows.length > 0);
+  $("sites-table").classList.toggle("hidden", rows.length === 0);
   table($("sites-table"), [{ label: "Website", key: "name" }, { label: "Allowed domains", render: r => r.allowed_domains.join(", ") },
     { label: "Products", num: true, key: "active_products" }, { label: "Selectors", render: r => r.has_selectors ? "configured" : "auto" },
     { label: "Login", render: r => r.requires_login ? "yes" : "no" }, { label: "Source", key: "source" }], rows);

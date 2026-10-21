@@ -125,12 +125,13 @@
           <pre id="cfg-out" class="small hidden"></pre>
           <h3>Websites</h3>
           <div class="table-wrap"><table id="sites-table"></table></div>
+          <div id="sites-empty" class="empty hidden">No websites yet — import a product list or add them to config/websites.yaml and sync.</div>
         </div>
       </div>
       <div class="card">
         <h2>API key</h2>
         <p class="small muted">Only needed when the server sets <code>API_KEY</code>. Stored in this browser only.</p>
-        <div class="row"><input id="api-key" type="password" placeholder="X-API-Key"><button id="api-key-save">Save</button></div>
+        <div class="row"><input id="api-key" type="password" placeholder="Leave empty unless the server sets API_KEY" autocomplete="new-password" data-lpignore="true" data-1p-ignore><button id="api-key-save">Save</button></div>
       </div>
     </section>
   </main>
