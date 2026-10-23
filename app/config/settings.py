@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     workflows_config: Path = PROJECT_ROOT / "config" / "workflows.yaml"
     selector_overrides_file: Path = PROJECT_ROOT / "config" / "selector_overrides.yaml"
     selector_healing: bool = True
+    selector_healing_llm: bool = True  # Claude anchors for name/availability when there is no structured data
+    selector_healing_llm_calls: int = Field(3, ge=0, le=50, description="Max LLM anchor calls per website per run")
 
     # Price intelligence
     price_change_threshold: float = Field(5.0, gt=0, le=100)
@@ -53,6 +55,7 @@ class Settings(BaseSettings):
 
     # LLM (optional — the platform runs deterministically without it)
     anthropic_api_key: SecretStr | None = None
+    anthropic_workspace_id: str | None = Field(None, description="Required for keys not scoped to a workspace")
     llm_model: str = "claude-opus-5-5"
     llm_effort: str = "medium"
     llm_extraction_fallback: bool = True
@@ -63,6 +66,12 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_poll_seconds: int = Field(30, ge=5)
     alert_webhook_url: SecretStr | None = None
+
+    @field_validator("anthropic_api_key", "anthropic_workspace_id", "api_key", "alert_webhook_url", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, v: object) -> object:
+        # `.env.example` ships `API_KEY=` etc.; a blank value must mean "not configured", not "required and empty".
+        return None if isinstance(v, str) and not v.strip() else v
 
     @property
     def currency_set(self) -> set[str]:

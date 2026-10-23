@@ -368,6 +368,7 @@ async function loadAlerts() {
 const ANCHOR = {
   json_ld: "the page's JSON-LD product data", microdata: "the page's microdata", meta: "the page's meta tags",
   structured: "the page's structured data", previous_observation: "the last trusted price (weaker evidence: verify it)",
+  llm: "Claude's reading of the page text (checked verbatim on the page: verify it)",
 };
 async function loadRepairs() {
   const items = await api("/api/selector-suggestions?status=pending");
@@ -387,7 +388,7 @@ async function loadRepairs() {
       h("div", {},
         h("div", {}, h("strong", {}, s.website), s.scope === "product" ? ` · ${s.product}` : " · all products", ` · ${s.field.replace("_", " ")}`),
         h("div", { style: "margin:6px 0" }, h("span", { class: "sel old" }, s.old_selector || "(none)"), "  →  ", pick),
-        h("div", { class: "small muted" }, `Matched “${s.sample_text}” on ${s.product || "the page"}, which equals ${s.anchor_value} from ${ANCHOR[s.anchor_source] || s.anchor_source}.`),
+        h("div", { class: "small muted" }, `Matched “${s.sample_text}” on ${s.product || "the page"}, ${s.field === "availability" ? "which contains" : "which equals"} “${s.anchor_value}” from ${ANCHOR[s.anchor_source] || s.anchor_source}.`),
         h("div", { class: "small muted" }, `Confidence ${Math.round(s.confidence * 100)}% · seen ${s.occurrences}× · last ${fmtAgo(s.last_seen_at)}`)),
       h("div", { class: "actions" }, h("button", { class: "primary sm", onclick: decide("approve") }, "Approve"),
         h("button", { class: "sm", onclick: decide("reject") }, "Reject"))));

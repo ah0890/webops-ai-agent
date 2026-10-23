@@ -147,7 +147,8 @@ docker compose up --build       # http://127.0.0.1:8000
 
 All runtime settings come from environment variables / `.env` (see [.env.example](.env.example)):
 threshold, plausibility limit, currencies, browser mode and timeouts, concurrency, per-site delays,
-retries, run timeout, robots.txt policy, optional `ANTHROPIC_API_KEY`, optional `API_KEY` for the
+retries, run timeout, robots.txt policy, optional `ANTHROPIC_API_KEY` (plus `ANTHROPIC_WORKSPACE_ID` for keys not
+scoped to a workspace), optional `API_KEY` for the
 REST API, optional alert webhook. Your real supplier data lives in git-ignored files:
 
 | File | Purpose |
@@ -254,7 +255,11 @@ Every issue is stored with the observation, so a reviewer sees exactly why.
 Real websites get redesigned, and a broken selector is the most common way scrapers silently degrade.
 During every run the agent checks each configured selector against an independent **anchor**: the page's
 own structured data (strong evidence) or, if there is none, the product's last trusted price (weaker
-evidence, labelled as such). When a selector is missing or disagrees with the anchor, the agent scans the
+evidence, labelled as such). Broken **product-name** and **availability** selectors on pages without structured data
+can be anchored by Claude (with an API key): it copies the wording from the page, and the anchor is kept only if that
+text appears verbatim on the page, a name shares words with the configured product name, and availability wording
+reads as a known stock status that agrees with any structured availability. LLM anchors are capped per website per
+run (`SELECTOR_HEALING_LLM_CALLS`, default 3) and stop once a field has a proposal. When a selector is missing or disagrees with the anchor, the agent scans the
 live DOM for the element showing the anchor value, builds candidate selectors (preferring `id`,
 `itemprop` and `data-*` test attributes, then semantic classes, never layout classes like `col-md-6` or
 crossed-out "was" prices), keeps only those that really select that element, and ranks them.
@@ -347,7 +352,7 @@ belong in `tests/integration/` and stay opt-in so the suite never depends on ext
 
 ## Roadmap
 
-1. ~~Selector self-healing~~ (shipped) → next: name/availability anchors from the LLM with evidence checks.
+1. ~~Selector self-healing~~ (shipped), including evidence-checked LLM anchors for name/availability → next: SKU anchors.
 2. PostgreSQL + task queue (Celery/RQ) for multi-worker scale; per-domain rate limiter service.
 3. Notification channels (email, Slack, Teams) with digest rules.
 4. Variant-aware products (option selection actions) and shipping/tax capture.

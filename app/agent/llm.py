@@ -29,11 +29,14 @@ class LLMProvider(ABC):
 class ClaudeProvider(LLMProvider):
     name = "claude"
 
-    def __init__(self, api_key: str, model: str, effort: str = "medium", refusal_fallbacks: bool = True):
+    def __init__(self, api_key: str, model: str, effort: str = "medium", refusal_fallbacks: bool = True,
+                 workspace_id: str | None = None):
         import anthropic
 
         self._anthropic = anthropic
-        self.client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=120.0)
+        # Keys not scoped to a workspace must name one on every request.
+        headers = {"anthropic-workspace-id": workspace_id} if workspace_id else None
+        self.client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=120.0, default_headers=headers)
         self.model = model
         self.effort = effort
         self.refusal_fallbacks = refusal_fallbacks
@@ -57,7 +60,8 @@ class ClaudeProvider(LLMProvider):
         except self._anthropic.RateLimitError as e:
             raise LLMUnavailable("Claude rate limit reached") from e
         except self._anthropic.APIStatusError as e:
-            raise LLMUnavailable(f"Claude API error {e.status_code}") from e
+            detail = e.body.get("error", {}).get("message") if isinstance(e.body, dict) else None
+            raise LLMUnavailable(f"Claude API error {e.status_code}" + (f": {detail}" if detail else "")) from e
         except self._anthropic.APIConnectionError as e:
             raise LLMUnavailable("could not reach Claude API") from e
         if resp.stop_reason == "refusal":
@@ -76,4 +80,5 @@ def get_provider(settings: Settings | None = None) -> LLMProvider | None:
         model=settings.llm_model,
         effort=settings.llm_effort,
         refusal_fallbacks=settings.llm_refusal_fallbacks,
+        workspace_id=settings.anthropic_workspace_id,
     )

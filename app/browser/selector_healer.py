@@ -2,21 +2,30 @@
 
 A proposal is only made when there is an independent *anchor* for the expected value:
   * the page's own structured data (JSON-LD / microdata / meta) — strong anchor, or
-  * the product's previous trusted price — weaker anchor (price may legitimately have changed).
+  * the product's previous trusted price — weaker anchor (price may legitimately have changed), or
+  * for name / availability text without structured data: wording Claude copied from the page,
+    accepted only if it appears verbatim on the page and passes field checks — medium anchor.
 Every candidate selector is verified against the live DOM (it must select the element showing
 the anchor value). Proposals are never applied automatically; a human approves them.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 
 from playwright.async_api import Page
+from pydantic import BaseModel, Field
 
-from app.config.schema import SelectorSet
+from app.agent.llm import LLMProvider, LLMUnavailable
+from app.config.schema import AvailabilityRules, SelectorSet
 from app.models.extraction import ExtractionResult
 from app.services.price_parser import parse_price
+from app.services.structured_data import normalise_availability
+
+log = logging.getLogger(__name__)
 
 _STRUCTURED = ("json_ld", "microdata", "meta")
 _AGREE_PCT = 0.5
@@ -25,8 +34,12 @@ _AGREE_PCT = 0.5
 _CANDIDATES_JS = r"""
 (args) => {
   const {mode, needle} = args;
+  // Generated CSS-in-JS names ("sc-AxjAm", "css-1q2w3e") have digits or mixed case; plain words like
+  // "availability" or "amount" are meaningful and must survive.
+  const hashed = c => (/\d/.test(c) && /^[a-z]{1,4}-?[A-Za-z0-9]{5,}$/.test(c))
+                      || /^[a-z]{1,4}-[A-Za-z0-9]*[A-Z][A-Za-z0-9]*$/.test(c);
   const stableClass = c => /^[A-Za-z][\w-]{1,40}$/.test(c) && !/\d{3,}|^(active|hover|selected|is-|js-|css-|sc-|jsx-)/i.test(c)
-                          && !/^[a-z]{1,3}-?[A-Za-z0-9]{5,}$/.test(c);
+                          && !hashed(c);
   // Layout/utility classes (grid, spacing, framework helpers) say nothing about meaning and change often.
   const layout = c => /^(col|row|container|wrapper|inner|clearfix|d-|flex|grid|span\d|pull-|float-|[mp][trblxy]?-\d|w-\d|h-\d|text-(left|right|center)|hidden|visible|block|inline)/i.test(c);
   const goodClass = c => stableClass(c) && !layout(c);
@@ -68,6 +81,7 @@ _CANDIDATES_JS = r"""
     if (!text || text.length > (mode === 'price' ? 40 : 200)) continue;
     if (mode === 'price' && !/\d/.test(text)) continue;
     if (mode === 'text' && text.replace(/\s+/g, ' ').toLowerCase() !== needle) continue;
+    if (mode === 'contains' && !text.replace(/\s+/g, ' ').toLowerCase().includes(needle)) continue;
     const st = getComputedStyle(el);
     const sels = selectorsFor(el).map(([kind, sel]) => {
       let n = 0, first = false;
@@ -91,8 +105,8 @@ _KIND_SCORE = {"id": 0.95, "itemprop": 0.9, "data": 0.9, "scoped": 0.85, "class"
 class Anchor:
     field: str
     value: float | str
-    source: str  # json_ld | microdata | meta | previous_observation
-    strength: str  # strong | weak
+    source: str  # json_ld | microdata | meta | structured | previous_observation | llm
+    strength: str  # strong | medium | weak
 
 
 @dataclass
@@ -143,26 +157,112 @@ def find_anchors(extraction: ExtractionResult, selectors: SelectorSet | None,
     return out
 
 
+_TEXT_FIELDS = ("product_name", "availability")
+
+
+def unanchored_fields(extraction: ExtractionResult, selectors: SelectorSet | None,
+                      anchors: list[tuple[Anchor, str | None]]) -> list[str]:
+    """Broken text selectors that structured data could not anchor — candidates for an LLM anchor."""
+    if not selectors:
+        return []
+    have = {a.field for a, _ in anchors}
+    return [f for f in _TEXT_FIELDS
+            if getattr(selectors, f) and f in extraction.selector_missing and f not in have]
+
+
+class LLMTextAnchors(BaseModel):
+    product_name: str | None = Field(None, description="Main product's name exactly as written on the page")
+    availability_text: str | None = Field(
+        None, description="The main product's stock/availability wording exactly as written on the page")
+
+
+_LLM_ANCHOR_SYSTEM = """You read the visible text of a single product page. Copy, verbatim and character for \
+character, the requested values for the MAIN product only: its name as shown in the page heading, and the short \
+phrase stating its stock availability (e.g. "In stock (12 available)", "Sold out"). Never paraphrase, translate, \
+combine separate lines or guess. Use null for anything not clearly shown."""
+
+
+def _squash(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _tokens(s: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", s.lower()) if len(t) >= 3}
+
+
+@dataclass
+class LLMHealBudget:
+    """Bounds LLM anchor calls per website per run; a field stops asking once it has a proposal."""
+
+    remaining: int = 3
+    satisfied: set[str] = field(default_factory=set)
+
+
+def llm_anchors(provider: LLMProvider, page_text: str, fields: list[str], *, product_name: str,
+                extraction: ExtractionResult, rules: AvailabilityRules | None) -> list[Anchor]:
+    """Ask the LLM for verbatim name/availability wording and keep only values that pass evidence checks."""
+    text = page_text[:12000]
+    wanted = ", ".join("name" if f == "product_name" else "availability wording" for f in fields)
+    prompt = f"Expected product: {product_name}\nReport: {wanted}\n\n--- PAGE TEXT ---\n{text}"
+    try:
+        out = provider.structured(_LLM_ANCHOR_SYSTEM, prompt, LLMTextAnchors, max_tokens=1000)
+    except LLMUnavailable as e:
+        log.info("LLM selector anchor unavailable: %s", e)
+        return []
+    page = _squash(text)
+    anchors: list[Anchor] = []
+    if "product_name" in fields and out.product_name:
+        value = out.product_name.strip()
+        expected = _tokens(product_name)
+        if _squash(value) not in page:
+            log.warning("discarded LLM name anchor: not on page (%r)", value)
+        elif expected and not expected & _tokens(value):
+            log.warning("discarded LLM name anchor: unrelated to %r (%r)", product_name, value)
+        else:
+            anchors.append(Anchor("product_name", value, "llm", "medium"))
+    if "availability" in fields and out.availability_text:
+        value = out.availability_text.strip()
+        status = normalise_availability(value, rules)
+        structured = next((c.availability for c in extraction.candidates
+                           if c.source in _STRUCTURED and c.availability not in (None, "unknown")), None)
+        if _squash(value) not in page or len(value) > 120:
+            log.warning("discarded LLM availability anchor: not on page (%r)", value)
+        elif status == "unknown" or (structured and structured != status):
+            log.warning("discarded LLM availability anchor: %r reads as %s (structured: %s)", value, status, structured)
+        else:
+            anchors.append(Anchor("availability", value, "llm", "medium"))
+    return anchors
+
+
 def rank(raw: list[dict], anchor: Anchor, old_selector: str | None, expected_currency: str | None) -> SelectorProposal | None:
     """Pure ranking of DOM candidates (unit-testable)."""
     scored: list[tuple[float, dict, dict]] = []
     max_font = max((r["font_size"] for r in raw), default=0) or 1
+    needle = _squash(str(anchor.value))
     for r in raw:
+        precision = 0.0
         if anchor.field == "price":
             p = parse_price(r["text"], expected_currency)
             if p.amount is None or p.ambiguous or abs(p.amount - float(anchor.value)) > 0.005 * float(anchor.value):
                 continue
             if r["struck"]:
                 continue  # old/crossed-out price
+        else:
+            text = _squash(r["text"])
+            if needle not in text:
+                continue
+            precision = 0.1 * (1 - len(needle) / len(text))  # wrapper elements with extra text rank lower
         for s in r["selectors"]:
             if s["selector"] == old_selector:
                 continue
-            score = _KIND_SCORE.get(s["kind"], 0.6)
+            score = _KIND_SCORE.get(s["kind"], 0.6) - precision
             if s["matches"] > 1:
                 score -= 0.15
             score += 0.05 * (r["font_size"] / max_font)
             if anchor.strength == "weak":
                 score -= 0.2
+            elif anchor.strength == "medium":
+                score -= 0.1
             scored.append((score, s, r))
     if not scored:
         return None
@@ -180,13 +280,26 @@ def rank(raw: list[dict], anchor: Anchor, old_selector: str | None, expected_cur
 
 
 async def propose(page: Page, extraction: ExtractionResult, selectors: SelectorSet | None,
-                  previous_price: float | None, expected_currency: str | None) -> list[SelectorProposal]:
+                  previous_price: float | None, expected_currency: str | None, *,
+                  provider: LLMProvider | None = None, budget: LLMHealBudget | None = None,
+                  product_name: str = "", rules: AvailabilityRules | None = None) -> list[SelectorProposal]:
+    anchors = find_anchors(extraction, selectors, previous_price)
+    if provider and budget and selectors:
+        fields = [f for f in unanchored_fields(extraction, selectors, anchors) if f not in budget.satisfied]
+        if fields and budget.remaining > 0:
+            budget.remaining -= 1
+            text = await page.evaluate("document.body ? document.body.innerText.slice(0, 12000) : ''")
+            found = await asyncio.to_thread(llm_anchors, provider, text, fields, product_name=product_name,
+                                            extraction=extraction, rules=rules)
+            anchors += [(a, getattr(selectors, a.field)) for a in found]
     proposals: list[SelectorProposal] = []
-    for anchor, old in find_anchors(extraction, selectors, previous_price):
-        mode = "price" if anchor.field == "price" else "text"
-        needle = re.sub(r"\s+", " ", str(anchor.value)).strip().lower()
-        raw = await page.evaluate(_CANDIDATES_JS, {"mode": mode, "needle": needle})
+    for anchor, old in anchors:
+        # Availability wording usually sits inside a longer phrase ("In stock (12 available)").
+        mode = "price" if anchor.field == "price" else ("contains" if anchor.field == "availability" else "text")
+        raw = await page.evaluate(_CANDIDATES_JS, {"mode": mode, "needle": _squash(str(anchor.value))})
         prop = rank(raw, anchor, old, expected_currency)
         if prop:
             proposals.append(prop)
+            if budget is not None and anchor.source == "llm":
+                budget.satisfied.add(anchor.field)
     return proposals

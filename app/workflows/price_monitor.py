@@ -20,6 +20,7 @@ from app.browser.executor import BrowserExecutor
 from app.browser.extractor import DataExtractor
 from app.browser.manager import BrowserManager, slug
 from app.browser.observer import PageObserver, PageState
+from app.browser.selector_healer import LLMHealBudget, propose
 from app.config.schema import AvailabilityRules, LoginConfig, SelectorSet, WorkflowDefinition
 from app.config.settings import Settings
 from app.database.models import (
@@ -77,6 +78,7 @@ class PriceMonitorRunner:
         self.observer = PageObserver()
         self.extractor = DataExtractor(provider, settings.llm_extraction_fallback)
         self._new_repairs: dict[int, list[str]] = defaultdict(list)
+        self._heal_budgets: dict[int, LLMHealBudget] = {}
         self.policy = ValidationPolicy(supported_currencies=settings.currency_set,
                                        max_plausible_change_pct=settings.max_plausible_change_pct)
 
@@ -313,12 +315,14 @@ class PriceMonitorRunner:
 
     async def _heal_selectors(self, run_id, audit, ex, rt, product, extraction, selectors, previous, expected_ccy) -> None:
         """Propose (never apply) replacements for configured selectors that no longer work."""
-        from app.browser.selector_healer import propose
         from app.services.selector_repair import record
 
+        provider = self.provider if self.settings.selector_healing_llm else None
+        budget = self._heal_budgets.setdefault(rt.website.id, LLMHealBudget(self.settings.selector_healing_llm_calls))
         try:
             page = await ex.ensure_page()
-            proposals = await propose(page, extraction, selectors, previous.price if previous else None, expected_ccy)
+            proposals = await propose(page, extraction, selectors, previous.price if previous else None, expected_ccy,
+                                      provider=provider, budget=budget, product_name=product.name, rules=rt.rules)
         except Exception as e:
             log.info("selector healing skipped: %s", e)
             return

@@ -110,3 +110,12 @@ def test_screenshot_path_traversal_blocked(client, seeded, session):
     session.add(s)
     session.commit()
     assert client.get(f"/api/screenshots/{s.id}").status_code == 404
+
+
+def test_blank_api_key_in_env_means_auth_disabled(monkeypatch):
+    from app.config.settings import Settings
+
+    monkeypatch.setenv("API_KEY", "  ")
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "")
+    s = Settings(_env_file=None)
+    assert s.api_key is None and s.alert_webhook_url is None
